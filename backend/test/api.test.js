@@ -41,16 +41,48 @@ test("first-account setup, login, and authenticated workspace API", async () => 
     assert.equal(response.status, 401);
   }
 
-  const setupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      displayName: "Test Administrator",
-      email: "Admin@Example.com",
-      password: "correct horse battery staple"
-    })
+  const preflightResponse = await fetch(`${baseUrl}/api/auth/setup`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://localhost:5173",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type"
+    }
   });
+  assert.equal(preflightResponse.status, 204);
+  assert.equal(preflightResponse.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  assert.equal(preflightResponse.headers.get("access-control-allow-credentials"), "true");
+
+  const rejectedPreflightResponse = await fetch(`${baseUrl}/api/auth/setup`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://untrusted.example",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type"
+    }
+  });
+  assert.equal(rejectedPreflightResponse.status, 403);
+
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  let setupResponse;
+  try {
+    setupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "http://localhost:5173" },
+      body: JSON.stringify({
+        displayName: "Test Administrator",
+        email: "Admin@Example.com",
+        password: "correct horse battery staple"
+      })
+    });
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
   assert.equal(setupResponse.status, 201);
+  assert.equal(setupResponse.headers.get("access-control-allow-origin"), "http://localhost:5173");
+  assert.equal(setupResponse.headers.get("access-control-allow-credentials"), "true");
   const setupData = await setupResponse.json();
   assert.deepEqual(setupData.user, {
     id: 1,
@@ -60,7 +92,8 @@ test("first-account setup, login, and authenticated workspace API", async () => 
   });
   const sessionCookie = setupResponse.headers.get("set-cookie");
   assert.match(sessionCookie, /HttpOnly/);
-  assert.match(sessionCookie, /SameSite=Strict/);
+  assert.match(sessionCookie, /SameSite=None/);
+  assert.match(sessionCookie, /Secure/);
   const cookie = sessionCookie.split(";")[0];
   assert.notEqual(
     database.prepare("SELECT password_hash FROM users WHERE id = 1").get().password_hash,

@@ -48,7 +48,9 @@ const seedTickets = [
   }
 ];
 
-export function createWorkspaceDatabase(databasePath = resolve(projectRoot, "database", "resolvex.sqlite")) {
+export function createWorkspaceDatabase(
+  databasePath = process.env.RESOLVEX_DB_PATH || resolve(projectRoot, "database", "resolvex.sqlite")
+) {
   if (databasePath !== ":memory:") {
     mkdirSync(dirname(databasePath), { recursive: true });
   }

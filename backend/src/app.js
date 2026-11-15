@@ -98,6 +98,18 @@ function verifyRequestOrigin(request) {
   }
 }
 
+function setCorsHeaders(request, response) {
+  const origin = request.headers.origin;
+  if (!origin || !allowedOrigins.has(origin)) return;
+
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Access-Control-Allow-Credentials", "true");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  response.setHeader("Access-Control-Max-Age", "600");
+  response.setHeader("Vary", "Origin");
+}
+
 function requireUser(request, database) {
   const user = getSessionUser(request, database);
   if (!user) throw new HttpError(401, "Please sign in to continue.");
@@ -231,6 +243,15 @@ export function createApiServer(database) {
     const url = new URL(request.url, "http://127.0.0.1");
 
     try {
+      setCorsHeaders(request, response);
+
+      if (request.method === "OPTIONS") {
+        verifyRequestOrigin(request);
+        response.writeHead(204, { "Cache-Control": "no-store" });
+        response.end();
+        return;
+      }
+
       if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
         verifyRequestOrigin(request);
       }

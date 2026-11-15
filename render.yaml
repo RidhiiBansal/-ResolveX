@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: resolvex-api
+    runtime: node
+    plan: 0.5c-512mb
+    buildCommand: cd backend && npm install --omit=dev
+    startCommand: cd backend && npm start
+    healthCheckPath: /api/health
+    disk:
+      name: resolvex-sqlite
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: NODE_ENV
+        value: production
+      - key: RESOLVEX_DB_PATH
+        value: /var/data/resolvex.sqlite
+      - key: FRONTEND_ORIGINS
+        value: https://resolvex-web.onrender.com
+
+  - type: web
+    name: resolvex-web
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: VITE_API_BASE_URL
+        value: https://resolvex-api.onrender.com/api
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -9,8 +9,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 const database = createWorkspaceDatabase();
 const server = createApiServer(database);
 
-server.listen(port, "127.0.0.1", () => {
-  console.log(`ResolveX API listening at http://127.0.0.1:${port}`);
+server.listen(port, "0.0.0.0", () => {
+  console.log(`ResolveX API listening on port ${port}`);
 });
 
 function shutdown() {

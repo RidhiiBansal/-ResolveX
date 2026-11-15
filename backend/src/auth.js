@@ -31,8 +31,10 @@ function cookieToken(request) {
 }
 
 function cookieAttributes(maxAge) {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `HttpOnly; Path=/api; SameSite=Strict; Max-Age=${maxAge}${secure}`;
+  const production = process.env.NODE_ENV === "production";
+  const secure = production ? "; Secure" : "";
+  const sameSite = production ? "None" : "Strict";
+  return `HttpOnly; Path=/api; SameSite=${sameSite}; Max-Age=${maxAge}${secure}`;
 }
 
 export async function createPasswordHash(password) {

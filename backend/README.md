@@ -8,10 +8,10 @@ From `backend`, run:
 npm run dev
 ```
 
-The API listens on `http://127.0.0.1:3001` by default. It creates `database/resolvex.sqlite` on first start and inserts sample tickets if the database is empty.
+The API listens on port `3001` by default (`PORT` can override it) and binds to all network interfaces. It creates `database/resolvex.sqlite` on first start and inserts sample tickets if the database is empty. Set `RESOLVEX_DB_PATH` to store the SQLite database at a different path.
 On the first visit, the frontend guides you through creating the initial administrator account. Use a password with at least 12 characters. Public account setup closes after that account is created.
 
-Passwords are stored as scrypt hashes. Login sessions use random, server-side tokens stored hashed in SQLite and sent to the browser only in `HttpOnly`, `SameSite=Strict` cookies. Sessions expire after 12 hours. Configure `FRONTEND_ORIGINS` as a comma-separated list when the frontend origin differs from the local Vite defaults.
+Passwords are stored as scrypt hashes. Login sessions use random, server-side tokens stored hashed in SQLite and sent to the browser only in `HttpOnly` cookies. Sessions expire after 12 hours. Production cookies use `SameSite=None; Secure` for the separately hosted frontend and API. Configure `FRONTEND_ORIGINS` as a comma-separated list of allowed browser origins; credentialed CORS is enabled only for those origins.
 
 ## Endpoints
 
