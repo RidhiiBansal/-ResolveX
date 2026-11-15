@@ -317,6 +317,42 @@ export function createApiHandler(database) {
         return;
       }
 
+      if (request.method === "POST" && url.pathname === "/api/auth/register") {
+        const body = await readJsonBody(request);
+        const email = normalizedEmail(body);
+        const displayName = requiredText(body, "displayName", "Display name", 100);
+        const password = setupPassword(body);
+
+        const { rows: existingUsers } = await database.query(
+          "SELECT id FROM users WHERE lower(email) = lower(?)",
+          [email]
+        );
+        if (existingUsers.length > 0) {
+          throw new HttpError(409, "An account with this email already exists.");
+        }
+
+        const passwordHash = await createPasswordHash(password);
+        const userId = await database.transaction(async transaction => {
+          const { rows: duplicateCheck } = await transaction.query(
+            "SELECT id FROM users WHERE lower(email) = lower(?)",
+            [email]
+          );
+          if (duplicateCheck.length > 0) {
+            throw new HttpError(409, "An account with this email already exists.");
+          }
+          const { rows: insertedUsers } = await transaction.query(`
+            INSERT INTO users (email, display_name, password_hash, role)
+            VALUES (?, ?, ?, 'admin')
+            RETURNING id
+          `, [email, displayName, passwordHash]);
+          return Number(insertedUsers[0].id);
+        }, { lockTable: "users" });
+
+        await createSession(response, database, userId);
+        sendJson(response, 201, { user: await userFromId(database, userId) });
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/api/auth/login") {
         const body = await readJsonBody(request);
         const email = normalizedEmail(body);

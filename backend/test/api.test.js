@@ -123,6 +123,30 @@ test("first-account setup, login, and authenticated workspace API", async () => 
   });
   assert.equal(repeatedSetupResponse.status, 409);
 
+  const registerResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Second Admin",
+      email: "second@example.com",
+      password: "correct horse battery staple"
+    })
+  });
+  assert.equal(registerResponse.status, 201);
+  const registerData = await registerResponse.json();
+  assert.equal(registerData.user.email, "second@example.com");
+
+  const duplicateRegisterResponse = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Duplicate Admin",
+      email: "SECOND@EXAMPLE.COM",
+      password: "correct horse battery staple"
+    })
+  });
+  assert.equal(duplicateRegisterResponse.status, 409);
+
   const authenticatedTicketsResponse = await fetch(`${baseUrl}/api/tickets`, {
     headers: { Cookie: cookie }
   });

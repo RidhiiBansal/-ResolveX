@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
@@ -165,21 +165,30 @@ function AnalyticsView({ tickets }) {
 }
 
 function AuthScreen({ setupRequired, connectionError, onRetry, onAuthenticated }) {
+  const [customMode, setCustomMode] = useState(null);
+  const mode = customMode ?? (setupRequired ? "register" : "login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  function switchMode(newMode) {
+    setCustomMode(newMode);
+    setFormError("");
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setFormError("");
     setIsSubmitting(true);
     try {
-      const endpoint = setupRequired ? "/auth/setup" : "/auth/login";
-      const body = setupRequired
-        ? { displayName: displayName.trim(), email: email.trim(), password }
-        : { email: email.trim(), password };
+      const endpoint = mode === "login"
+        ? "/auth/login"
+        : (setupRequired ? "/auth/setup" : "/auth/register");
+      const body = mode === "login"
+        ? { email: email.trim(), password }
+        : { displayName: displayName.trim(), email: email.trim(), password };
       const response = await api.post(endpoint, body);
       onAuthenticated(response.data.user);
     } catch (error) {
@@ -207,14 +216,42 @@ function AuthScreen({ setupRequired, connectionError, onRetry, onAuthenticated }
           </div>
         ) : (
           <>
-            <h1>{setupRequired ? "Set up your workspace" : "Welcome back"}</h1>
+            <div className="auth-tabs" role="tablist">
+              <button
+                type="button"
+                className={`auth-tab ${mode === "login" ? "active" : ""}`}
+                onClick={() => switchMode("login")}
+                role="tab"
+                aria-selected={mode === "login"}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                className={`auth-tab ${mode === "register" ? "active" : ""}`}
+                onClick={() => switchMode("register")}
+                role="tab"
+                aria-selected={mode === "register"}
+              >
+                {setupRequired ? "Setup" : "Sign Up"}
+              </button>
+            </div>
+
+            <h1>
+              {mode === "login"
+                ? "Welcome back"
+                : (setupRequired ? "Set up your workspace" : "Create an account")}
+            </h1>
             <p className="auth-intro">
-              {setupRequired
-                ? "Create the first administrator account to secure this workspace."
-                : "Sign in to manage your support workspace."}
+              {mode === "login"
+                ? "Sign in to manage your support workspace."
+                : (setupRequired
+                    ? "Create the first administrator account to secure this workspace."
+                    : "Register to manage and view support tickets.")}
             </p>
+
             <form onSubmit={handleSubmit}>
-              {setupRequired && (
+              {mode === "register" && (
                 <div className="form-group">
                   <label htmlFor="auth-display-name">Display name</label>
                   <input
@@ -246,12 +283,12 @@ function AuthScreen({ setupRequired, connectionError, onRetry, onAuthenticated }
                   type="password"
                   value={password}
                   onChange={event => setPassword(event.target.value)}
-                  autoComplete={setupRequired ? "new-password" : "current-password"}
-                  minLength={setupRequired ? 12 : 1}
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                  minLength={mode === "register" ? 12 : 1}
                   maxLength={128}
                   required
                 />
-                {setupRequired && (
+                {mode === "register" && (
                   <span className="password-hint">Use at least 12 characters.</span>
                 )}
               </div>
@@ -259,14 +296,37 @@ function AuthScreen({ setupRequired, connectionError, onRetry, onAuthenticated }
               <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>
                 {isSubmitting
                   ? "Please wait…"
-                  : setupRequired
-                    ? "Create administrator"
-                    : "Sign in"}
+                  : mode === "login"
+                    ? "Sign in"
+                    : (setupRequired ? "Create administrator" : "Create account")}
               </button>
             </form>
-            {setupRequired && (
-              <p className="auth-note">Initial setup closes after the first account is created.</p>
-            )}
+
+            <div className="auth-switch-prompt">
+              {mode === "login" ? (
+                <p>
+                  New to ResolveX?{" "}
+                  <button
+                    type="button"
+                    className="auth-link-button"
+                    onClick={() => switchMode("register")}
+                  >
+                    Sign up
+                  </button>
+                </p>
+              ) : (
+                <p>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    className="auth-link-button"
+                    onClick={() => switchMode("login")}
+                  >
+                    Sign in
+                  </button>
+                </p>
+              )}
+            </div>
           </>
         )}
       </section>
