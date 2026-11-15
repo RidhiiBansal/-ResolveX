@@ -13,7 +13,7 @@ after(async () => {
       server.close(error => error ? reject(error) : resolve());
     });
   }
-  if (database) database.close();
+  if (database) await database.close();
 });
 
 test("first-account setup, login, and authenticated workspace API", async () => {
@@ -52,6 +52,17 @@ test("first-account setup, login, and authenticated workspace API", async () => 
   assert.equal(preflightResponse.status, 204);
   assert.equal(preflightResponse.headers.get("access-control-allow-origin"), "http://localhost:5173");
   assert.equal(preflightResponse.headers.get("access-control-allow-credentials"), "true");
+
+  const sameOriginPreflightResponse = await fetch(`${baseUrl}/api/auth/setup`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: baseUrl,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type"
+    }
+  });
+  assert.equal(sameOriginPreflightResponse.status, 204);
+  assert.equal(sameOriginPreflightResponse.headers.get("access-control-allow-origin"), baseUrl);
 
   const rejectedPreflightResponse = await fetch(`${baseUrl}/api/auth/setup`, {
     method: "OPTIONS",
@@ -95,10 +106,11 @@ test("first-account setup, login, and authenticated workspace API", async () => 
   assert.match(sessionCookie, /SameSite=None/);
   assert.match(sessionCookie, /Secure/);
   const cookie = sessionCookie.split(";")[0];
-  assert.notEqual(
-    database.prepare("SELECT password_hash FROM users WHERE id = 1").get().password_hash,
-    "correct horse battery staple"
+  const { rows: passwordRows } = await database.query(
+    "SELECT password_hash FROM users WHERE id = ?",
+    [1]
   );
+  assert.notEqual(passwordRows[0].password_hash, "correct horse battery staple");
 
   const repeatedSetupResponse = await fetch(`${baseUrl}/api/auth/setup`, {
     method: "POST",

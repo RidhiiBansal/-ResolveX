@@ -56,18 +56,19 @@ export async function verifyPassword(password, passwordHash) {
   return timingSafeEqual(derivedKey, expectedKey);
 }
 
-export function getSessionUser(request, database) {
+export async function getSessionUser(request, database) {
   const token = cookieToken(request);
   if (!token || token.length > 128) return null;
 
   const now = new Date().toISOString();
-  database.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-  const user = database.prepare(`
+  await database.query("DELETE FROM sessions WHERE expires_at <= ?", [now]);
+  const { rows } = await database.query(`
     SELECT users.id, users.email, users.display_name, users.role
     FROM sessions
     JOIN users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ? AND sessions.expires_at > ?
-  `).get(hashSessionToken(token), now);
+  `, [hashSessionToken(token), now]);
+  const user = rows[0];
 
   if (!user) return null;
   return {
@@ -78,22 +79,22 @@ export function getSessionUser(request, database) {
   };
 }
 
-export function createSession(response, database, userId) {
+export async function createSession(response, database, userId) {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + sessionLifetimeSeconds * 1000).toISOString();
-  database.prepare(`
+  await database.query(`
     INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)
-  `).run(userId, hashSessionToken(token), expiresAt);
+  `, [userId, hashSessionToken(token), expiresAt]);
   response.setHeader(
     "Set-Cookie",
     `${sessionCookieName}=${token}; ${cookieAttributes(sessionLifetimeSeconds)}`
   );
 }
 
-export function deleteSession(request, response, database) {
+export async function deleteSession(request, response, database) {
   const token = cookieToken(request);
   if (token && token.length <= 128) {
-    database.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashSessionToken(token));
+    await database.query("DELETE FROM sessions WHERE token_hash = ?", [hashSessionToken(token)]);
   }
   response.setHeader("Set-Cookie", `${sessionCookieName}=; ${cookieAttributes(0)}`);
 }

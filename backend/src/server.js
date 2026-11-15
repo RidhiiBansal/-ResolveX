@@ -9,13 +9,20 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 const database = createWorkspaceDatabase();
 const server = createApiServer(database);
 
+await database.ready;
+
 server.listen(port, "0.0.0.0", () => {
   console.log(`ResolveX API listening on port ${port}`);
 });
 
 function shutdown() {
-  server.close(error => {
-    database.close();
+  server.close(async error => {
+    try {
+      await database.close();
+    } catch (closeError) {
+      console.error("Failed to close the database connection cleanly.", closeError);
+      process.exitCode = 1;
+    }
     if (error) {
       console.error("Failed to close the API server cleanly.", error);
       process.exitCode = 1;

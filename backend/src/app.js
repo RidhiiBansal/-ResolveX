@@ -93,14 +93,30 @@ function loginPassword(body) {
 
 function verifyRequestOrigin(request) {
   const origin = request.headers.origin;
-  if (origin && !allowedOrigins.has(origin)) {
+  if (origin && !isAllowedOrigin(request, origin)) {
     throw new HttpError(403, "Request origin is not allowed.");
+  }
+}
+
+function isAllowedOrigin(request, origin) {
+  if (allowedOrigins.has(origin)) return true;
+
+  try {
+    const forwardedProtocol = request.headers["x-forwarded-proto"];
+    const protocol = typeof forwardedProtocol === "string"
+      ? forwardedProtocol.split(",")[0].trim()
+      : request.socket.encrypted ? "https" : "http";
+    const host = request.headers.host;
+    if (!host) return false;
+    return new URL(origin).origin === new URL(request.url, `${protocol}://${host}`).origin;
+  } catch {
+    return false;
   }
 }
 
 function setCorsHeaders(request, response) {
   const origin = request.headers.origin;
-  if (!origin || !allowedOrigins.has(origin)) return;
+  if (!origin || !isAllowedOrigin(request, origin)) return;
 
   response.setHeader("Access-Control-Allow-Origin", origin);
   response.setHeader("Access-Control-Allow-Credentials", "true");
@@ -110,16 +126,17 @@ function setCorsHeaders(request, response) {
   response.setHeader("Vary", "Origin");
 }
 
-function requireUser(request, database) {
-  const user = getSessionUser(request, database);
+async function requireUser(request, database) {
+  const user = await getSessionUser(request, database);
   if (!user) throw new HttpError(401, "Please sign in to continue.");
   return user;
 }
 
-function userFromId(database, userId) {
-  const row = database.prepare(`
+async function userFromId(database, userId) {
+  const { rows } = await database.query(`
     SELECT id, email, display_name, role FROM users WHERE id = ?
-  `).get(userId);
+  `, [userId]);
+  const row = rows[0];
   return {
     id: row.id,
     email: row.email,
@@ -196,11 +213,12 @@ function ticketFieldsFromBody(body, { partial = false, defaultStatus } = {}) {
   return fields;
 }
 
-function findTicket(database, ticketNumber) {
-  return database.prepare(`
+async function findTicket(database, ticketNumber) {
+  const { rows } = await database.query(`
     SELECT ticket_number, title, customer, description, category, priority, status, created_at
     FROM tickets WHERE ticket_number = ?
-  `).get(ticketNumber);
+  `, [ticketNumber]);
+  return rows[0];
 }
 
 function createLoginRateLimiter() {
@@ -235,14 +253,15 @@ function createLoginRateLimiter() {
   };
 }
 
-export function createApiServer(database) {
+export function createApiHandler(database) {
   const loginRateLimiter = createLoginRateLimiter();
   const dummyPasswordHash = createPasswordHash("ResolveX invalid login placeholder");
 
-  return createServer(async (request, response) => {
+  return async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
 
     try {
+      await database.ready;
       setCorsHeaders(request, response);
 
       if (request.method === "OPTIONS") {
@@ -262,9 +281,9 @@ export function createApiServer(database) {
       }
 
       if (request.method === "GET" && url.pathname === "/api/auth/state") {
-        const user = getSessionUser(request, database);
-        const userCount = database.prepare("SELECT COUNT(*) AS count FROM users").get().count;
-        sendJson(response, 200, { setupRequired: userCount === 0, user });
+        const user = await getSessionUser(request, database);
+        const { rows } = await database.query("SELECT COUNT(*) AS count FROM users");
+        sendJson(response, 200, { setupRequired: Number(rows[0].count) === 0, user });
         return;
       }
 
@@ -274,30 +293,27 @@ export function createApiServer(database) {
         const displayName = requiredText(body, "displayName", "Display name", 100);
         const password = setupPassword(body);
 
-        if (database.prepare("SELECT COUNT(*) AS count FROM users").get().count > 0) {
+        const { rows: userCountRows } = await database.query("SELECT COUNT(*) AS count FROM users");
+        if (Number(userCountRows[0].count) > 0) {
           throw new HttpError(409, "Initial account setup is already complete.");
         }
 
         const passwordHash = await createPasswordHash(password);
-        database.exec("BEGIN IMMEDIATE");
-        let result;
-        try {
-          if (database.prepare("SELECT COUNT(*) AS count FROM users").get().count > 0) {
+        const userId = await database.transaction(async transaction => {
+          const { rows } = await transaction.query("SELECT COUNT(*) AS count FROM users");
+          if (Number(rows[0].count) > 0) {
             throw new HttpError(409, "Initial account setup is already complete.");
           }
-          result = database.prepare(`
+          const { rows: insertedUsers } = await transaction.query(`
             INSERT INTO users (email, display_name, password_hash, role)
             VALUES (?, ?, ?, 'admin')
-          `).run(email, displayName, passwordHash);
-          database.exec("COMMIT");
-        } catch (error) {
-          database.exec("ROLLBACK");
-          throw error;
-        }
+            RETURNING id
+          `, [email, displayName, passwordHash]);
+          return Number(insertedUsers[0].id);
+        }, { lockTable: "users" });
 
-        const userId = Number(result.lastInsertRowid);
-        createSession(response, database, userId);
-        sendJson(response, 201, { user: userFromId(database, userId) });
+        await createSession(response, database, userId);
+        sendJson(response, 201, { user: await userFromId(database, userId) });
         return;
       }
 
@@ -308,10 +324,11 @@ export function createApiServer(database) {
         const ip = request.socket.remoteAddress || "unknown";
         loginRateLimiter.assertAllowed(ip);
 
-        const row = database.prepare(`
+        const { rows } = await database.query(`
           SELECT id, email, display_name, password_hash, role
           FROM users WHERE email = ?
-        `).get(email);
+        `, [email]);
+        const row = rows[0];
         const passwordMatches = row
           ? await verifyPassword(password, row.password_hash)
           : await verifyPassword(password, await dummyPasswordHash);
@@ -321,7 +338,7 @@ export function createApiServer(database) {
         }
 
         loginRateLimiter.clear(ip);
-        createSession(response, database, row.id);
+        await createSession(response, database, row.id);
         sendJson(response, 200, {
           user: {
             id: row.id,
@@ -334,63 +351,64 @@ export function createApiServer(database) {
       }
 
       if (request.method === "POST" && url.pathname === "/api/auth/logout") {
-        deleteSession(request, response, database);
+        await deleteSession(request, response, database);
         sendJson(response, 200, { ok: true });
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/api/tickets") {
-        requireUser(request, database);
-        const rows = database.prepare(`
+        await requireUser(request, database);
+        const { rows } = await database.query(`
           SELECT ticket_number, title, customer, description, category, priority, status, created_at
           FROM tickets
           ORDER BY ticket_number DESC
-        `).all();
+        `);
         sendJson(response, 200, rows.map(ticketToJson));
         return;
       }
 
       if (request.method === "POST" && url.pathname === "/api/tickets") {
-        requireUser(request, database);
+        await requireUser(request, database);
         const body = await readJsonBody(request);
         const ticket = ticketFieldsFromBody(body, { defaultStatus: "Open" });
 
-        const result = database.prepare(`
+        const { rows } = await database.query(`
           INSERT INTO tickets (title, customer, description, category, priority, status)
           VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
+          RETURNING ticket_number, title, customer, description, category, priority, status, created_at
+        `, [
           ticket.title,
           ticket.customer,
           ticket.description,
           ticket.category,
           ticket.priority,
           ticket.status
-        );
-        const row = findTicket(database, Number(result.lastInsertRowid));
-        sendJson(response, 201, ticketToJson(row));
+        ]);
+        sendJson(response, 201, ticketToJson(rows[0]));
         return;
       }
 
       const ticketRoute = /^\/api\/tickets\/([^/]+)$/.exec(url.pathname);
       if (ticketRoute && ["GET", "PUT", "PATCH", "DELETE"].includes(request.method)) {
-        requireUser(request, database);
+        await requireUser(request, database);
         const ticketNumber = ticketNumberFromId(ticketRoute[1]);
         if (ticketNumber === null) {
           throw new HttpError(404, "Ticket not found.");
         }
 
         if (request.method === "GET") {
-          const row = findTicket(database, ticketNumber);
+          const row = await findTicket(database, ticketNumber);
           if (!row) throw new HttpError(404, "Ticket not found.");
           sendJson(response, 200, ticketToJson(row));
           return;
         }
 
         if (request.method === "DELETE") {
-          const result = database.prepare(
-            "DELETE FROM tickets WHERE ticket_number = ?"
-          ).run(ticketNumber);
-          if (result.changes === 0) throw new HttpError(404, "Ticket not found.");
+          const result = await database.query(
+            "DELETE FROM tickets WHERE ticket_number = ?",
+            [ticketNumber]
+          );
+          if (result.rowCount === 0) throw new HttpError(404, "Ticket not found.");
           response.writeHead(204, {
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff"
@@ -403,33 +421,36 @@ export function createApiServer(database) {
         const fields = ticketFieldsFromBody(body, { partial: request.method === "PATCH" });
         const entries = Object.entries(fields);
         const assignments = entries.map(([key]) => `${key} = ?`).join(", ");
-        const result = database.prepare(
-          `UPDATE tickets SET ${assignments} WHERE ticket_number = ?`
-        ).run(...entries.map(([, value]) => value), ticketNumber);
-        if (result.changes === 0) {
+        const { rows } = await database.query(
+          `UPDATE tickets SET ${assignments} WHERE ticket_number = ?
+           RETURNING ticket_number, title, customer, description, category, priority, status, created_at`,
+          [...entries.map(([, value]) => value), ticketNumber]
+        );
+        if (rows.length === 0) {
           throw new HttpError(404, "Ticket not found.");
         }
-        const row = findTicket(database, ticketNumber);
-        sendJson(response, 200, ticketToJson(row));
+        sendJson(response, 200, ticketToJson(rows[0]));
         return;
       }
 
       if (request.method === "GET" && url.pathname === "/api/profile") {
-        const user = requireUser(request, database);
-        const profile = database.prepare(
-          "SELECT display_name FROM users WHERE id = ?"
-        ).get(user.id);
-        sendJson(response, 200, { displayName: profile.display_name });
+        const user = await requireUser(request, database);
+        const { rows } = await database.query(
+          "SELECT display_name FROM users WHERE id = ?",
+          [user.id]
+        );
+        sendJson(response, 200, { displayName: rows[0].display_name });
         return;
       }
 
       if (request.method === "PUT" && url.pathname === "/api/profile") {
-        const user = requireUser(request, database);
+        const user = await requireUser(request, database);
         const body = await readJsonBody(request);
         const displayName = requiredText(body, "displayName", "Display name", 100);
-        database.prepare(
-          "UPDATE users SET display_name = ? WHERE id = ?"
-        ).run(displayName, user.id);
+        await database.query(
+          "UPDATE users SET display_name = ? WHERE id = ?",
+          [displayName, user.id]
+        );
         sendJson(response, 200, { displayName });
         return;
       }
@@ -443,5 +464,9 @@ export function createApiServer(database) {
       console.error("API request failed.", error);
       sendJson(response, 500, { error: "An unexpected server error occurred." });
     }
-  });
+  };
+}
+
+export function createApiServer(database) {
+  return createServer(createApiHandler(database));
 }
