@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
@@ -29,7 +29,7 @@ const emptyForm = {
   priority: "Medium"
 };
 
-function TicketTable({ tickets, onStatusChange, updatingTicketIds }) {
+function TicketTable({ tickets, onStatusChange, updatingTicketIds, onSelectTicket }) {
   return (
     <div className="table-container">
       <table>
@@ -41,13 +41,31 @@ function TicketTable({ tickets, onStatusChange, updatingTicketIds }) {
             <th>Category</th>
             <th>Priority</th>
             <th>Status</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {tickets.map(ticket => (
-            <tr key={ticket.id}>
+            <tr
+              key={ticket.id}
+              className="ticket-row"
+              onClick={() => onSelectTicket?.(ticket)}
+              title="Click to view ticket details"
+            >
               <td className="ticket-id">{ticket.id}</td>
-              <td>{ticket.title}</td>
+              <td className="ticket-subject">
+                <button
+                  type="button"
+                  className="ticket-title-btn"
+                  onClick={event => {
+                    event.stopPropagation();
+                    onSelectTicket?.(ticket);
+                  }}
+                  title="Open ticket problem and details"
+                >
+                  {ticket.title}
+                </button>
+              </td>
               <td>{ticket.customer}</td>
               <td>{ticket.category}</td>
               <td>
@@ -55,7 +73,7 @@ function TicketTable({ tickets, onStatusChange, updatingTicketIds }) {
                   {ticket.priority}
                 </span>
               </td>
-              <td>
+              <td onClick={event => event.stopPropagation()}>
                 <select
                   className={`status status-select ${ticket.status.toLowerCase()}`}
                   aria-label={`Update status for ${ticket.id}`}
@@ -68,11 +86,21 @@ function TicketTable({ tickets, onStatusChange, updatingTicketIds }) {
                   <option>Resolved</option>
                 </select>
               </td>
+              <td onClick={event => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="view-ticket-btn"
+                  onClick={() => onSelectTicket?.(ticket)}
+                  title="Open ticket details"
+                >
+                  Open
+                </button>
+              </td>
             </tr>
           ))}
           {tickets.length === 0 && (
             <tr>
-              <td colSpan="6" className="empty-state">No tickets found.</td>
+              <td colSpan="7" className="empty-state">No tickets found.</td>
             </tr>
           )}
         </tbody>
@@ -266,6 +294,12 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [updatingTicketIds, setUpdatingTicketIds] = useState(() => new Set());
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [isDeletingTicket, setIsDeletingTicket] = useState(false);
+
+  const activeTicket = selectedTicket
+    ? tickets.find(t => t.id === selectedTicket.id) || selectedTicket
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -295,18 +329,19 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
   }, [loadAttempt]);
 
   useEffect(() => {
-    if (!showForm) return undefined;
+    if (!showForm && !selectedTicket) return undefined;
 
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         setShowForm(false);
         setFormError("");
+        setSelectedTicket(null);
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showForm]);
+  }, [showForm, selectedTicket]);
 
   const openTickets = tickets.filter(t => t.status === "Open").length;
   const pendingTickets = tickets.filter(t => t.status === "Pending").length;
@@ -444,6 +479,24 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
         next.delete(ticketId);
         return next;
       });
+    }
+  }
+
+  async function handleDeleteTicket(ticketId) {
+    if (!window.confirm(`Are you sure you want to delete ticket ${ticketId}?`)) {
+      return;
+    }
+    setIsDeletingTicket(true);
+    setActionError("");
+    try {
+      await api.delete(`/tickets/${encodeURIComponent(ticketId)}`);
+      setTickets(prev => prev.filter(t => t.id !== ticketId));
+      setNotifications(prev => [`Ticket ${ticketId} was deleted.`, ...prev].slice(0, 5));
+      setSelectedTicket(null);
+    } catch (error) {
+      setActionError(getApiError(error));
+    } finally {
+      setIsDeletingTicket(false);
     }
   }
 
@@ -652,6 +705,7 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
                   tickets={filteredTickets.slice(0, 5)}
                   onStatusChange={handleStatusChange}
                   updatingTicketIds={updatingTicketIds}
+                  onSelectTicket={setSelectedTicket}
                 />
               </section>
             </>
@@ -681,6 +735,7 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
                   tickets={filteredTickets}
                   onStatusChange={handleStatusChange}
                   updatingTicketIds={updatingTicketIds}
+                  onSelectTicket={setSelectedTicket}
                 />
               </section>
             </>
@@ -921,6 +976,114 @@ function WorkspaceApp({ authUser, onAuthUserChange, onLogout }) {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TICKET DETAIL / PROBLEM MODAL */}
+
+      {activeTicket && (
+        <div
+          className="modal-overlay"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              setSelectedTicket(null);
+            }
+          }}
+        >
+          <div className="ticket-modal ticket-detail-modal" role="dialog" aria-modal="true" aria-labelledby="ticket-detail-title">
+            <div className="modal-header">
+              <div>
+                <div className="ticket-badges-row">
+                  <span className="ticket-id-tag">{activeTicket.id}</span>
+                  <span className={`priority ${activeTicket.priority.toLowerCase()}`}>
+                    {activeTicket.priority}
+                  </span>
+                  <span className={`status ${activeTicket.status.toLowerCase()}`}>
+                    {activeTicket.status}
+                  </span>
+                </div>
+                <h2 id="ticket-detail-title">{activeTicket.title}</h2>
+                <p>Submitted by <strong>{activeTicket.customer}</strong> • Category: <strong>{activeTicket.category}</strong></p>
+              </div>
+
+              <button
+                className="close-button"
+                type="button"
+                onClick={() => setSelectedTicket(null)}
+                aria-label="Close ticket details"
+              >
+                <X size={21} />
+              </button>
+            </div>
+
+            <div className="ticket-detail-content">
+              <div className="detail-section">
+                <h3 className="detail-section-title">Problem Description</h3>
+                <div className="problem-description-card">
+                  {activeTicket.description}
+                </div>
+              </div>
+
+              <div className="detail-meta-grid">
+                <div className="detail-meta-item">
+                  <span className="detail-meta-label">Status</span>
+                  <select
+                    className={`status status-select ${activeTicket.status.toLowerCase()}`}
+                    aria-label={`Update status for ${activeTicket.id}`}
+                    value={activeTicket.status}
+                    onChange={event => handleStatusChange(activeTicket.id, event.target.value)}
+                    disabled={updatingTicketIds.has(activeTicket.id)}
+                  >
+                    <option>Open</option>
+                    <option>Pending</option>
+                    <option>Resolved</option>
+                  </select>
+                </div>
+                <div className="detail-meta-item">
+                  <span className="detail-meta-label">Customer</span>
+                  <span className="detail-meta-val">{activeTicket.customer}</span>
+                </div>
+                <div className="detail-meta-item">
+                  <span className="detail-meta-label">Category</span>
+                  <span className="detail-meta-val">{activeTicket.category}</span>
+                </div>
+                <div className="detail-meta-item">
+                  <span className="detail-meta-label">Priority</span>
+                  <span className="detail-meta-val">{activeTicket.priority}</span>
+                </div>
+                {activeTicket.createdAt && (
+                  <div className="detail-meta-item">
+                    <span className="detail-meta-label">Created At</span>
+                    <span className="detail-meta-val">
+                      {new Date(activeTicket.createdAt).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short"
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="delete-button"
+                onClick={() => handleDeleteTicket(activeTicket.id)}
+                disabled={isDeletingTicket}
+              >
+                {isDeletingTicket ? "Deleting…" : "Delete Ticket"}
+              </button>
+
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setSelectedTicket(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

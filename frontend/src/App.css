@@ -922,6 +922,149 @@
   cursor: pointer;
 }
 
+/* Ticket Table Interactive Styles */
+.ticket-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.ticket-row:hover {
+  background-color: #f7f8fd !important;
+}
+
+.ticket-title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #292d40;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.ticket-title-btn:hover {
+  color: #7058e8;
+  text-decoration: underline;
+}
+
+.view-ticket-btn {
+  background: #f4f3ff;
+  color: #6d52e6;
+  border: 1px solid #e4dfff;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.view-ticket-btn:hover {
+  background: #6d52e6;
+  color: #ffffff;
+}
+
+/* Ticket Detail Modal */
+.ticket-detail-modal {
+  max-width: 620px;
+}
+
+.ticket-badges-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ticket-id-tag {
+  background: #ede9fe;
+  color: #7058e8;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.detail-section {
+  margin-top: 14px;
+  margin-bottom: 18px;
+}
+
+.detail-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #555c70;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 6px;
+}
+
+.problem-description-card {
+  background: #f8f9fc;
+  border: 1px solid #e5e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #2d3345;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 70px;
+}
+
+.detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  background: #fafbfe;
+  border-radius: 8px;
+  border: 1px solid #edf0f7;
+  margin-bottom: 16px;
+}
+
+.detail-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-meta-label {
+  font-size: 10px;
+  color: #858b9c;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.detail-meta-val {
+  font-size: 12px;
+  color: #292d40;
+  font-weight: 600;
+}
+
+.delete-button {
+  background: #fff1f2;
+  color: #e11d48;
+  border: 1px solid #fecdd3;
+  padding: 9px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  margin-right: auto;
+}
+
+.delete-button:hover {
+  background: #ffe4e6;
+  border-color: #fda4af;
+}
+
 @media (max-width: 550px) {
   .app-layout {
     display: block;
